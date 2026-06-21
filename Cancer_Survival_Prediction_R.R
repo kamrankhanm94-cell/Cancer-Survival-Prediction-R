@@ -1,0 +1,282 @@
+#Cancer Survival Prediction Using Machine Learning in R
+
+#Project Overview
+
+#This project performs survival analysis and machine learning-based risk prediction using clinical lung cancer patient data.
+
+#The workflow includes:
+  
+#Data preprocessing
+#Kaplan-Meier survival analysis
+#Clinical variable survival comparison
+#Cox proportional hazards modelling
+#Hazard ratio analysis
+#Random Forest classification for survival risk prediction
+#Feature importance analysis
+#Correlation analysis
+
+#1. Load Required Libraries
+
+library(survival)
+library(tidyverse)
+library(survminer)
+
+library(caret)
+library(randomForest)
+
+library(corrplot)
+
+#2. Load Lung Cancer Dataset
+
+data(lung)
+
+head(lung)
+
+dim(lung)
+
+str(lung)
+
+summary(lung)
+
+#3. Data Cleaning and Preprocessing
+
+# Create dataset copy
+
+cancer_data <- lung
+
+
+# Convert survival status
+# 1 = censored
+# 2 = death
+
+cancer_data$status <- ifelse(
+  cancer_data$status == 2,
+  1,
+  0
+)
+
+
+# Remove missing values
+
+cancer_data <- na.omit(cancer_data)
+
+
+dim(cancer_data)
+
+summary(cancer_data)
+
+#4. Convert Categorical Variables
+
+cancer_data$sex <- factor(
+  cancer_data$sex,
+  levels=c(1,2),
+  labels=c("Male","Female")
+)
+
+
+cancer_data$ph.ecog <- factor(
+  cancer_data$ph.ecog
+)
+
+
+str(cancer_data)
+
+#5. Create Survival Object
+
+survival_object <- Surv(
+  time = cancer_data$time,
+  event = cancer_data$status
+)
+
+
+head(survival_object)
+
+#6. Kaplan-Meier Overall Survival Analysis
+
+#Figure 1: Overall Survival Curve
+
+km_model <- survfit(
+  survival_object ~ 1,
+  data=cancer_data
+)
+
+
+summary(km_model)
+
+
+ggsurvplot(
+  km_model,
+  data=cancer_data,
+  conf.int=TRUE,
+  risk.table=TRUE,
+  title="Overall Survival Curve of Lung Cancer Patients",
+  xlab="Time (days)",
+  ylab="Survival Probability"
+)
+
+#7. Survival Analysis by Gender
+
+#Figure 2: Survival Difference Between Male and Female Patients
+
+km_gender <- survfit(
+  Surv(time,status) ~ sex,
+  data=cancer_data
+)
+
+
+ggsurvplot(
+  km_gender,
+  data=cancer_data,
+  pval=TRUE,
+  risk.table=TRUE,
+  conf.int=TRUE,
+  title="Survival by Gender",
+  legend.labs=c("Male","Female")
+)
+
+#8. Cox Proportional Hazards Model
+
+#The Cox model evaluates the association between clinical variables and patient survival.
+
+cox_model <- coxph(
+  Surv(time,status) ~ age + sex + ph.ecog,
+  data=cancer_data
+)
+
+
+summary(cox_model)
+
+#9. Hazard Ratio Estimation
+
+# Hazard ratios
+
+exp(coef(cox_model))
+
+
+# Confidence intervals
+
+exp(confint(cox_model))
+
+#10. Forest Plot of Hazard Ratios
+
+#Figure 3: Cox Regression Forest Plot
+
+ggforest(
+  cox_model,
+  data=cancer_data
+)
+
+#11. Survival Analysis by ECOG Score
+
+#ECOG score represents patient performance status.
+
+#Figure 4: Survival According to ECOG Score
+
+km_ecog <- survfit(
+  Surv(time,status) ~ ph.ecog,
+  data=cancer_data
+)
+
+
+ggsurvplot(
+  km_ecog,
+  data=cancer_data,
+  risk.table=TRUE,
+  pval=TRUE,
+  title="Survival by ECOG Score"
+)
+
+#12. Machine Learning Risk Prediction
+
+#A binary outcome was created:
+  
+#High Risk = survival time below median
+#Low Risk = survival time above median
+
+cancer_data$HighRisk <- ifelse(
+  cancer_data$time < median(cancer_data$time),
+  1,
+  0
+)
+
+
+table(cancer_data$HighRisk)
+
+#13. Train-Test Split
+
+set.seed(42)
+
+
+train_index <- sample(
+  1:nrow(cancer_data),
+  0.8*nrow(cancer_data)
+)
+
+
+train <- cancer_data[train_index,]
+
+test <- cancer_data[-train_index,]
+
+#14. Random Forest Model
+
+rf_model <- randomForest(
+  as.factor(HighRisk) ~ 
+    age + sex + ph.ecog + ph.karno + pat.karno,
+  data=train,
+  ntree=300
+)
+
+
+rf_model
+
+#15. Model Prediction and Evaluation
+
+pred <- predict(
+  rf_model,
+  test
+)
+
+
+table(
+  Actual=test$HighRisk,
+  Predicted=pred
+)
+
+#16. Random Forest Feature Importance
+
+#Figure 5: Important Predictors
+
+varImpPlot(
+  rf_model
+)
+
+#17. Correlation Analysis
+
+#Clinical variable correlation analysis.
+
+numeric_data <- data.frame(
+  
+  time = as.numeric(cancer_data$time),
+  
+  age = as.numeric(cancer_data$age),
+  
+  ph.ecog = as.numeric(cancer_data$ph.ecog),
+  
+  ph.karno = as.numeric(cancer_data$ph.karno),
+  
+  pat.karno = as.numeric(cancer_data$pat.karno)
+  
+)
+
+
+cor_matrix <- cor(
+  numeric_data,
+  use="complete.obs"
+)
+
+
+corrplot(
+  cor_matrix,
+  method="color",
+  type="upper"
+)
